@@ -9,7 +9,7 @@
     "commander": "^15.1.0",
     "picocolors": "^1.1.1"
   },
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Check that every env var your code uses is in .env.example and GitHub Secrets. Reads names only, never values.",
   "license": "MIT",
   "bin": {
