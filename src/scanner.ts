@@ -1,4 +1,5 @@
-import { Glob } from "bun";
+import { readdir, readFile } from "node:fs/promises";
+import picomatch from "picomatch";
 
 /** One place in the code that reads an environment variable. */
 export type Ref = { name: string; file: string; line: number };
@@ -51,12 +52,15 @@ export function findRefs(source: string, file: string): Ref[] {
 
 /** Every env var reference under root, grouped by name. File paths are relative to root. */
 export async function scanDir(root: string, ignore: string[] = TEST_GLOBS): Promise<Map<string, Ref[]>> {
-  const skip = ignore.map((g) => new Glob(g));
+  const skipped = picomatch(ignore.length ? ignore : ["!**"]);
   const found = new Map<string, Ref[]>();
-  const glob = new Glob(`**/*.{${Object.keys(PATTERNS).join(",")}}`);
-  for await (const file of glob.scan({ cwd: root, dot: false })) {
-    if (file.split("/").some((part) => SKIP.includes(part)) || skip.some((g) => g.match(file))) continue;
-    for (const ref of findRefs(await Bun.file(`${root}/${file}`).text(), file)) {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile() || !PATTERNS[entry.name.split(".").pop() ?? ""]) continue;
+    const file = `${entry.parentPath}/${entry.name}`.slice(root.length).replace(/^[/\\]+/, "").replaceAll("\\", "/");
+    // Hidden folders, like .git, are skipped too.
+    if (file.split("/").some((part) => SKIP.includes(part) || part.startsWith(".")) || skipped(file)) continue;
+    for (const ref of findRefs(await readFile(`${root}/${file}`, "utf8"), file)) {
       found.set(ref.name, [...(found.get(ref.name) ?? []), ref]);
     }
   }

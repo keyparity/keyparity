@@ -5,7 +5,7 @@ import { render } from "./reporter.ts";
 
 const app = join(import.meta.dir, "../test/fixtures/app");
 const cli = (...args: string[]) =>
-  Bun.spawn(["bun", join(import.meta.dir, "index.ts"), ...args], { stdout: "pipe", stderr: "pipe", env: { ...process.env, NO_COLOR: "1" } });
+  Bun.spawn(["bun", join(import.meta.dir, "cli.ts"), ...args], { stdout: "pipe", stderr: "pipe", env: { ...process.env, NO_COLOR: "1" } });
 
 test("runAudit combines code, workflows, the template and secrets", async () => {
   const result = await runAudit({ path: app }, { listSecrets: async () => ["DB_URL", "STALE"] });

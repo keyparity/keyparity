@@ -3,21 +3,22 @@
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/picomatch": "^4.0.3",
     "typescript": "^7.0.2"
   },
   "dependencies": {
     "commander": "^15.1.0",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "picomatch": "^4.0.7"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Check that every env var your code uses is in .env.example and GitHub Secrets. Reads names only, never values.",
   "license": "MIT",
   "bin": {
-    "keyparity": "src/index.ts"
+    "keyparity": "dist/cli.js"
   },
   "files": [
-    "src",
-    "!src/**/*.test.ts"
+    "dist/cli.js"
   ],
   "repository": {
     "type": "git",
@@ -27,6 +28,11 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --compile --outfile dist/keyparity"
+    "build": "bun build src/cli.ts --compile --outfile dist/keyparity",
+    "build:npm": "bun build src/cli.ts --target=node --minify --outfile dist/cli.js",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build:npm"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

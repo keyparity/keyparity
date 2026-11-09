@@ -16,6 +16,11 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
+      - name: The npm build runs on plain Node
+        run: |
+          bun run build:npm
+          node dist/cli.js --version
+          node dist/cli.js audit --path test/fixtures/app --skip-secrets --strict || test $? -eq 1
   dco:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

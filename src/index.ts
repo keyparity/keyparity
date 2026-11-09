@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+import { writeFile } from "node:fs/promises";
 import { Command } from "commander";
 import { isColorSupported } from "picocolors";
 import pkg from "../package.json" with { type: "json" };
@@ -43,14 +43,14 @@ program
   .action(async (opts: { path: string; write?: boolean }) => {
     const body = buildTemplate([...(await scanDir(opts.path, TEST_GLOBS)).keys()]);
     if (!opts.write) return void process.stdout.write(body);
-    const file = Bun.file(`${opts.path}/.env.example`);
-    if (await file.exists()) {
-      console.error(`${opts.path}/.env.example already exists. keyparity won't overwrite it. Run without --write to see the output.`);
+    const file = `${opts.path}/.env.example`;
+    try {
+      // "wx" creates the file only if it doesn't exist, in one step.
+      await writeFile(file, body, { flag: "wx" });
+      console.log(`Wrote ${file}`);
+    } catch (err) {
+      if ((err as { code?: string }).code !== "EEXIST") throw err;
+      console.error(`${file} already exists. keyparity won't overwrite it. Run without --write to see the output.`);
       process.exitCode = 1;
-      return;
     }
-    await Bun.write(file, body);
-    console.log(`Wrote ${opts.path}/.env.example`);
   });
-
-if (import.meta.main) await program.parseAsync();

@@ -1,15 +1,19 @@
+import { spawn } from "node:child_process";
+
 /** Runs gh with these arguments. Swapped out in tests, so they never touch GitHub. */
 export type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const runGh: Run = async (args) => {
-  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { code, stdout, stderr };
-};
+// An argument list, never a shell string, so nothing in args can be run as a command.
+const runGh: Run = (args) =>
+  new Promise((resolve, reject) => {
+    const proc = spawn("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d) => (stdout += d));
+    proc.stderr.on("data", (d) => (stderr += d));
+    proc.on("error", reject);
+    proc.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
 
 /**
  * The names of a repo's GitHub Actions secrets. Only names: GitHub never returns secret values

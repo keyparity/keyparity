@@ -1,4 +1,4 @@
-import { Glob } from "bun";
+import { readdir, readFile } from "node:fs/promises";
 import type { Ref } from "./scanner.ts";
 
 // Provided by GitHub Actions in every run, so it's never a secret anyone has to set.
@@ -15,8 +15,10 @@ export function findWorkflowSecrets(source: string, file: string): Ref[] {
 /** Every secret the repo's workflows read, grouped by name. */
 export async function scanWorkflows(root: string): Promise<Map<string, Ref[]>> {
   const found = new Map<string, Ref[]>();
-  for await (const file of new Glob(".github/workflows/*.{yml,yaml}").scan({ cwd: root, dot: true })) {
-    for (const ref of findWorkflowSecrets(await Bun.file(`${root}/${file}`).text(), file)) {
+  const names = await readdir(`${root}/.github/workflows`).catch(() => [] as string[]);
+  for (const name of names.filter((n) => /\.ya?ml$/.test(n))) {
+    const file = `.github/workflows/${name}`;
+    for (const ref of findWorkflowSecrets(await readFile(`${root}/${file}`, "utf8"), file)) {
       found.set(ref.name, [...(found.get(ref.name) ?? []), ref]);
     }
   }
@@ -34,8 +36,8 @@ export function parseTemplate(text: string): string[] {
 /** The repo's env template: .env.example, else .env.template, else null. */
 export async function readTemplate(root: string): Promise<{ file: string; names: string[] } | null> {
   for (const file of [".env.example", ".env.template"]) {
-    const f = Bun.file(`${root}/${file}`);
-    if (await f.exists()) return { file, names: parseTemplate(await f.text()) };
+    const text = await readFile(`${root}/${file}`, "utf8").catch(() => null);
+    if (text !== null) return { file, names: parseTemplate(text) };
   }
   return null;
 }
