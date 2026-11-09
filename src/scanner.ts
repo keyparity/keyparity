@@ -15,8 +15,20 @@ const JS = [
   new RegExp(`\\bimport\\.meta\\.env\\.${NAME}\\b`, "g"),
 ];
 
+// A quoted literal name. A name built at run time (an f-string, concatenation) never matches.
+const ARG = `\\(\\s*["']${NAME}["']`;
+
+const PY = [
+  new RegExp(`\\bos\\.environ${KEY}`, "g"),
+  new RegExp(`\\bos\\.environ\\.get${ARG}`, "g"),
+  new RegExp(`\\bos\\.getenv${ARG}`, "g"),
+];
+const GO = [new RegExp(`\\bos\\.(?:Getenv|LookupEnv)\\(\\s*"${NAME}"`, "g")];
+const RUST = [new RegExp(`\\benv::var(?:_os)?\\(\\s*"${NAME}"`, "g")];
+
 const PATTERNS: Record<string, RegExp[]> = {
   js: JS, mjs: JS, cjs: JS, jsx: JS, ts: JS, tsx: JS,
+  py: PY, go: GO, rs: RUST,
 };
 
 const SKIP = ["node_modules", "dist", ".git"];

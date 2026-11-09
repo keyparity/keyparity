@@ -55,3 +55,18 @@ test("scanDir groups references by name and skips node_modules, dist and .git", 
   expect([...found.keys()].sort()).toEqual(["API_KEY", "DB_URL"]);
   expect(found.get("API_KEY")?.map((r) => r.file).sort()).toEqual(["src/a.ts", "src/b.js"]);
 });
+
+test("finds Python os.environ and os.getenv forms", () => {
+  const src = `import os\nos.environ["DB_URL"]\nos.environ.get('CACHE_DIR')\nos.getenv("LOG_LEVEL", "info")\nos.environ.get(f"{p}_KEY")`;
+  expect(names(src, "app.py")).toEqual(["DB_URL", "CACHE_DIR", "LOG_LEVEL"]);
+});
+
+test("finds Go os.Getenv and os.LookupEnv", () => {
+  const src = `port := os.Getenv("PORT")\nv, ok := os.LookupEnv("API_TOKEN")\nos.Getenv(prefix + "_X")`;
+  expect(names(src, "main.go")).toEqual(["PORT", "API_TOKEN"]);
+});
+
+test("finds Rust env::var and std::env::var", () => {
+  const src = `let a = env::var("DATABASE_URL")?;\nlet b = std::env::var("REDIS_URL").unwrap();\nenv::var_os("HOME_DIR");\nenv::var(&key);`;
+  expect(names(src, "main.rs")).toEqual(["DATABASE_URL", "REDIS_URL", "HOME_DIR"]);
+});
