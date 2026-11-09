@@ -9,10 +9,16 @@ keyparity checks that every environment variable your code uses is listed in `.e
 
 ## Install
 
-Download the binary for your system from the [latest release](https://github.com/keyparity/keyparity/releases/latest). On an Apple Silicon Mac:
+With Node 20 or later, run it without installing:
 
 ```sh
-curl -fsSLo keyparity https://github.com/keyparity/keyparity/releases/download/v0.1.0/keyparity-darwin-arm64
+npx keyparity audit
+```
+
+Or download a single-file binary for your system from the [latest release](https://github.com/keyparity/keyparity/releases/latest). On an Apple Silicon Mac:
+
+```sh
+curl -fsSLo keyparity https://github.com/keyparity/keyparity/releases/download/v0.1.2/keyparity-darwin-arm64
 gh attestation verify keyparity --repo keyparity/keyparity
 chmod +x keyparity && mv keyparity /usr/local/bin/
 ```
