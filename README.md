@@ -1,5 +1,8 @@
 # keyparity
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16475/badge)](https://www.bestpractices.dev/projects/16475)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/keyparity/keyparity/badge)](https://scorecard.dev/viewer/?uri=github.com/keyparity/keyparity)
+
 Your code reads `STRIPE_KEY`. Your `.env.example` forgot it, and so did the repo's GitHub Secrets. You find out when the deploy fails at 2 a.m.
 
 keyparity checks that every environment variable your code uses is listed in `.env.example` and set as a GitHub Secret, and flags the ones nobody uses any more. It reads secret **names** only, never values.
