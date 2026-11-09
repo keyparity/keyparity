@@ -21,6 +21,8 @@ jobs:
           bun run build:npm
           node dist/cli.js --version
           node dist/cli.js audit --path test/fixtures/app --skip-secrets --strict || test $? -eq 1
+          # The default --path is '.', which is how most people run it.
+          (cd test/fixtures/app && node ../../../dist/cli.js audit --skip-secrets --include-tests --json | jq -e '.entries | length > 0')
   dco:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

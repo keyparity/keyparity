@@ -82,3 +82,17 @@ test("scanDir skips test files and fixtures by default, and scans them when aske
   expect([...(await scanDir(root, ["src/app.ts"])).keys()].sort()).toEqual(["FROM_DUNDER", "FROM_TEST"]);
 });
 
+
+test("scanDir works with a relative root like the default '.'", async () => {
+  const root = await mkdtemp(join(tmpdir(), "keyparity-"));
+  await mkdir(join(root, "src"));
+  await writeFile(join(root, "src/a.js"), "process.env.STRIPE_KEY");
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const found = await scanDir(".");
+    expect(found.get("STRIPE_KEY")?.[0]?.file).toBe("src/a.js");
+  } finally {
+    process.chdir(cwd);
+  }
+});

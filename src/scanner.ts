@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import picomatch from "picomatch";
 
 /** One place in the code that reads an environment variable. */
@@ -57,7 +58,8 @@ export async function scanDir(root: string, ignore: string[] = TEST_GLOBS): Prom
   const entries = await readdir(root, { recursive: true, withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !PATTERNS[entry.name.split(".").pop() ?? ""]) continue;
-    const file = `${entry.parentPath}/${entry.name}`.slice(root.length).replace(/^[/\\]+/, "").replaceAll("\\", "/");
+    // readdir's parentPath is relative when root is, so let path.relative handle both cases.
+    const file = relative(root, join(entry.parentPath, entry.name)).split(sep).join("/");
     // Hidden folders, like .git, are skipped too.
     if (file.split("/").some((part) => SKIP.includes(part) || part.startsWith(".")) || skipped(file)) continue;
     for (const ref of findRefs(await readFile(`${root}/${file}`, "utf8"), file)) {
