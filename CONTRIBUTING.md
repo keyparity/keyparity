@@ -10,6 +10,7 @@ Thanks for helping. Here's how to get a change in without surprises.
 ## Pull requests
 
 - Branch from `main`, and keep each PR to one change.
+- New behaviour comes with tests, and a bug fix comes with a test that fails without it. Run `bun test` and `bun run typecheck` before you push. CI runs both.
 - Sign off every commit with `git commit -s`. That's the [Developer Certificate of Origin](https://developercertificate.org/): you're saying you have the right to contribute the change. CI checks for it.
 - If your PR comes from a fork, its CI waits until a maintainer has read the diff and approved the run. That's normal, not a sign anything's wrong.
 - If `main` moves on, click **Update branch** on your PR. We won't push to your branch.
