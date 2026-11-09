@@ -51,7 +51,7 @@ test("scanDir groups references by name and skips node_modules, dist and .git", 
   await writeFile(join(root, "node_modules/pkg/index.js"), "process.env.SHOULD_NOT_APPEAR");
   await writeFile(join(root, "dist/out.js"), "process.env.ALSO_NOT");
 
-  const found = await scanDir(root);
+  const found = await scanDir(root, []);
   expect([...found.keys()].sort()).toEqual(["API_KEY", "DB_URL"]);
   expect(found.get("API_KEY")?.map((r) => r.file).sort()).toEqual(["src/a.ts", "src/b.js"]);
 });
@@ -70,3 +70,15 @@ test("finds Rust env::var and std::env::var", () => {
   const src = `let a = env::var("DATABASE_URL")?;\nlet b = std::env::var("REDIS_URL").unwrap();\nenv::var_os("HOME_DIR");\nenv::var(&key);`;
   expect(names(src, "main.rs")).toEqual(["DATABASE_URL", "REDIS_URL", "HOME_DIR"]);
 });
+
+test("scanDir skips test files and fixtures by default, and scans them when asked", async () => {
+  const root = await mkdtemp(join(tmpdir(), "keyparity-"));
+  await mkdir(join(root, "src/__tests__"), { recursive: true });
+  await writeFile(join(root, "src/app.ts"), "process.env.REAL");
+  await writeFile(join(root, "src/app.test.ts"), "process.env.FROM_TEST");
+  await writeFile(join(root, "src/__tests__/x.ts"), "process.env.FROM_DUNDER");
+  expect([...(await scanDir(root)).keys()]).toEqual(["REAL"]);
+  expect([...(await scanDir(root, [])).keys()].sort()).toEqual(["FROM_DUNDER", "FROM_TEST", "REAL"]);
+  expect([...(await scanDir(root, ["src/app.ts"])).keys()].sort()).toEqual(["FROM_DUNDER", "FROM_TEST"]);
+});
+

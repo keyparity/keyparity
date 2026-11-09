@@ -33,6 +33,9 @@ const PATTERNS: Record<string, RegExp[]> = {
 
 const SKIP = ["node_modules", "dist", ".git"];
 
+/** Test files and fixtures mention env var names as data, not as config the app reads. */
+export const TEST_GLOBS = ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/fixtures/**", "**/testdata/**"];
+
 /** Every env var reference in one file's source, in order of position. */
 export function findRefs(source: string, file: string): Ref[] {
   const patterns = PATTERNS[file.split(".").pop() ?? ""];
@@ -47,11 +50,12 @@ export function findRefs(source: string, file: string): Ref[] {
 }
 
 /** Every env var reference under root, grouped by name. File paths are relative to root. */
-export async function scanDir(root: string): Promise<Map<string, Ref[]>> {
+export async function scanDir(root: string, ignore: string[] = TEST_GLOBS): Promise<Map<string, Ref[]>> {
+  const skip = ignore.map((g) => new Glob(g));
   const found = new Map<string, Ref[]>();
   const glob = new Glob(`**/*.{${Object.keys(PATTERNS).join(",")}}`);
   for await (const file of glob.scan({ cwd: root, dot: false })) {
-    if (file.split("/").some((part) => SKIP.includes(part))) continue;
+    if (file.split("/").some((part) => SKIP.includes(part)) || skip.some((g) => g.match(file))) continue;
     for (const ref of findRefs(await Bun.file(`${root}/${file}`).text(), file)) {
       found.set(ref.name, [...(found.get(ref.name) ?? []), ref]);
     }

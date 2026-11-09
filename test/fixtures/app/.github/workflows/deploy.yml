@@ -1,0 +1,5 @@
+jobs:
+  deploy:
+    steps:
+      - env:
+          TOKEN: ${{ secrets.DEPLOY_TOKEN }}
