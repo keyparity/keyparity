@@ -8,12 +8,14 @@ on:
         description: "Version to release, like 0.1.0 (no v). Must match package.json."
         required: true
 permissions:
-  contents: write        # create the draft release
-  id-token: write        # sign the build provenance
-  attestations: write    # store it
+  contents: read
 jobs:
   draft:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the draft release
+      id-token: write        # sign the build provenance
+      attestations: write    # store it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
