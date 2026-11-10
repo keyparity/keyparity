@@ -1,0 +1,13 @@
+# GitHard on-duty settings. Changing this file is a reviewed PR like any other.
+# Nothing runs until GITHARD_TOKEN and a Claude secret are set.
+
+mode: safe                      # auto | safe
+chat: approve                   # auto | approve | approve-first (safe mode only)
+approve_first_count: 5          # how many replies wait for you under approve-first
+identity: maintainer            # maintainer | bot (required)
+risky_paths_need_human: true    # true | false
+wait_for_checks: []             # check names to wait for, like [CodeQL, Scorecard]
+approvers: []                   # GitHub logins who can approve a card
+monthly_cap_usd: none           # your own number, or none (required)
+first_timer_runs_per_day: none  # a whole number, or none
+release_after_days: 7           # days of merged work before a release is due

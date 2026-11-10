@@ -1,0 +1,267 @@
+# GitHard on duty: looks after this repo around the clock, on your own Claude account.
+# Claude only writes proposals. GitHard's scripts decide what goes out, and only they hold
+# GITHARD_TOKEN, the token that can write. The step that runs Claude never sees it.
+# GitHard is pinned to one commit below. Moving the pin is a reviewed PR.
+name: GitHard on duty
+
+on:
+  issues:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+  # Runs the default branch's copy of this file. It never checks out the PR's head.
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  on-duty:
+    # GitHard's own comments never queue a run. Queued behind a long run, they'd push out a
+    # person's pending event, because a concurrency group keeps only one run waiting.
+    if: ${{ !contains(github.event.review.body || github.event.comment.body || github.event.issue.body || github.event.pull_request.body || '', '<!-- githard -->') }}
+    concurrency:
+      group: githard-on-duty
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: read
+      checks: read # pending.sh reads each PR's check results
+      statuses: read
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }} # read-only; only the steps that write swap in GITHARD_TOKEN
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0 # tags and history, for working out when a release is due
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: getgithard/githard
+          ref: aa17b7b58773f981aea469f4d58fe68d4de11a40 # main after #86, until githard--v0.2.0 ships
+          path: .githard
+          persist-credentials: false
+
+      # claude-code-action refuses app actors; the scheduled run picks up their PRs instead
+      - name: Skip app events
+        id: actor
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # the schedule is the safety net, so it always goes on, whoever last touched the cron
+          case $EVENT in schedule|workflow_dispatch) echo "go=true" >> "$GITHUB_OUTPUT"; exit 0 ;; esac
+          case $ACTOR in *"[bot]") echo "::notice::on-duty skipped this event: it came from an app. The next scheduled run looks at it."; exit 0 ;; esac
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: Read the config
+        id: cfg
+        if: steps.actor.outputs.go == 'true'
+        run: |
+          if ! bash .githard/skills/on-duty/config.sh .github/githard.yml > "$RUNNER_TEMP/cfg"; then
+            echo "::notice::on-duty is off: .github/githard.yml is missing or has a mistake (the reason is above). Run GitHard's on-duty skill to set it up."
+            exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check the secrets
+        id: secrets
+        if: steps.cfg.outputs.go == 'true'
+        env:
+          HAS_CLAUDE: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_WRITE: ${{ secrets.GITHARD_TOKEN != '' }}
+        run: |
+          missing=""; them=it
+          [ "$HAS_CLAUDE" = true ] || missing="ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"
+          [ "$HAS_WRITE" = true ] || { [ -n "$missing" ] && them=them; missing="${missing:+$missing, and }GITHARD_TOKEN"; }
+          if [ -n "$missing" ]; then
+            echo "::notice::on-duty is off: this run can't see $missing. Add $them under Settings > Secrets and variables > Actions."
+            exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether this event needs a run
+        id: event
+        if: steps.secrets.outputs.go == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          ASSOC: ${{ github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association || github.event.pull_request.author_association }}
+          BODY: ${{ github.event.review.body || github.event.comment.body || github.event.issue.body || github.event.pull_request.body }}
+        run: |
+          case $EVENT in schedule|workflow_dispatch) echo "go=true" >> "$GITHUB_OUTPUT"; exit 0 ;; esac
+          printf '%s' "$BODY" > "$RUNNER_TEMP/body"
+          runs=""
+          if [[ $ACTOR =~ ^[A-Za-z0-9-]+$ ]]; then
+            # this run is in the count, so take it off
+            runs=$(gh api -X GET "repos/$REPO/actions/workflows/githard-on-duty.yml/runs" -f actor="$ACTOR" -f created=">=$(date -u +%F)" --jq '.total_count - 1') || runs=""
+          fi
+          verdict=$(bash .githard/skills/on-duty/gate.sh should-run "$RUNNER_TEMP/cfg" --assoc "$ASSOC" --body-file "$RUNNER_TEMP/body" --runs-today "$runs")
+          if [ "$verdict" != run ]; then echo "on-duty skipped this event: ${verdict#skip }"; exit 0; fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: Carry out the cards you approved
+        id: approved
+        if: steps.event.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHARD_TOKEN }}
+        run: |
+          rc=0; bash .githard/skills/on-duty/act.sh "$REPO" "$RUNNER_TEMP/cfg" --approved > "$RUNNER_TEMP/approved" || rc=$?
+          cat "$RUNNER_TEMP/approved"
+          [ "$rc" = 0 ] || echo "::warning::act.sh --approved exited $rc. Its lines above say which card."
+          if [ -s "$RUNNER_TEMP/approved" ]; then echo "acted=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Decide whether Claude is needed
+        id: plan
+        if: steps.event.outputs.go == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTED: ${{ steps.approved.outputs.acted }}
+          ON_QUEUE: ${{ github.event.issue.title == 'Waiting for you' }}
+          SPEND: ${{ vars.GITHARD_SPEND }}
+          SEEN: ${{ vars.GITHARD_SEEN }}
+          BOT_TOKEN: ${{ secrets.GITHARD_TOKEN }} # only to ask GitHub who the bot is
+        run: |
+          mkdir -p "$RUNNER_TEMP/githard"
+          owed=0; bash .githard/skills/contributors/unanswered.sh "$REPO" > "$RUNNER_TEMP/githard/unanswered.txt" 2>&1 || owed=$?
+          # act.sh refuses a release it can't work out, so "unknown" counts as not due here
+          due=false; if bash .githard/skills/on-duty/act.sh "$REPO" "$RUNNER_TEMP/cfg" --release-due; then due=true; fi
+          echo "release_due=$due" >> "$GITHUB_OUTPUT"
+          if [ "$ON_QUEUE" = true ]; then echo "This event is in the Waiting for you issue, so Claude isn't needed."; exit 0; fi
+          if [ "$EVENT" = schedule ] && [ "$ACTED" != true ]; then
+            # green PRs and fork runs waiting for approval, unless a card already names their head;
+            # a failed read (exit 2) always means run
+            pending=2; t=$RUNNER_TEMP/githard
+            if bot=$(GH_TOKEN=$BOT_TOKEN gh api user --jq .login); then
+              pending=0; bash .githard/skills/on-duty/pending.sh "$REPO" "$bot" > "$t/pending.txt" || pending=$?
+              cat "$t/pending.txt"
+            fi
+            if [ "$owed" = 0 ] && [ "$due" = false ] && [ "$pending" = 1 ]; then
+              echo "Nothing is owed, pending or due, and no card was approved, so Claude isn't needed."
+              exit 0
+            fi
+            # the same work Claude already looked at, unchanged, isn't worth paying for again
+            if [ "$owed" != 2 ] && [ "$pending" != 2 ]; then
+              echo "release_due=$due" > "$t/due.txt"
+              sig=$(bash .githard/skills/on-duty/pending.sh --sig "$t/unanswered.txt" "$t/pending.txt" "$t/due.txt")
+              echo "sig=$sig" >> "$GITHUB_OUTPUT"
+              if [ "$sig" = "$SEEN" ]; then
+                echo "Nothing has changed since Claude last looked (GITHARD_SEEN is $sig), so Claude isn't needed."
+                exit 0
+              fi
+            fi
+          fi
+          cap=$(grep '^monthly_cap_usd=' "$RUNNER_TEMP/cfg" | cut -d= -f2-)
+          month=$(date -u +%Y-%m)
+          if ! verdict=$(bash .githard/skills/on-duty/spend.sh check "$SPEND" "$cap" "$month"); then
+            echo "::notice::on-duty skipped Claude: the repo variable GITHARD_SPEND isn't in the form 'YYYY-MM AMOUNT', like '$month 3.20'. Fix it under Settings > Secrets and variables > Actions > Variables, or delete it to count this month from zero."
+            exit 0
+          fi
+          echo "month=$month" >> "$GITHUB_OUTPUT"
+          echo "cap=$cap" >> "$GITHUB_OUTPUT"
+          if [ "$verdict" = over ]; then echo "over=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "claude=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tell you the cap was hit
+        if: steps.plan.outputs.over == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHARD_TOKEN }}
+          CAP: ${{ steps.plan.outputs.cap }}
+          MONTH: ${{ steps.plan.outputs.month }}
+        run: |
+          # the same text all month, so queue.sh posts it once
+          printf '**Spending cap reached**\n\nThis month (%s) has used your cap of $%s on Claude, so on-duty has stopped calling Claude. It starts again next month, or as soon as you raise monthly_cap_usd in .github/githard.yml. Cards you approve still go out.\n' "$MONTH" "$CAP" > "$RUNNER_TEMP/capcard"
+          bash .githard/skills/on-duty/queue.sh add "$REPO" ask 0 - "$RUNNER_TEMP/capcard"
+          echo "::notice::on-duty skipped Claude: this month's spend has reached monthly_cap_usd ($CAP)."
+
+      - name: Ask Claude for proposals
+        id: claude
+        if: steps.plan.outputs.claude == 'true'
+        uses: anthropics/claude-code-action@8041f1d17e0e7d2f2cfe35002962e9f26237c0bb # v1.0.263
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # anyone may open an issue, so this run holds only the read-only job token
+          allowed_non_write_users: "*"
+          # the plugin from the pinned checkout, so the skill matches the scripts it drives
+          plugin_marketplaces: ${{ github.workspace }}/.githard
+          plugins: githard@githard
+          prompt: |
+            GitHard on-duty run for ${{ github.repository }}.
+            Event: ${{ github.event_name }} ${{ github.event.action }}, item #${{ github.event.issue.number || github.event.pull_request.number || 'none' }}.
+            A release is due: ${{ steps.plan.outputs.release_due }}.
+            What unanswered.sh found: ${{ runner.temp }}/githard/unanswered.txt
+            GitHard's files are in .githard/.
+            Use the githard:on-duty skill. Write proposals to ${{ runner.temp }}/githard/actions.json. Do not act.
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Skill,Read(./**),Read(/${{ runner.temp }}/githard/**),Glob,Grep,Edit(/${{ runner.temp }}/githard/actions.json),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh release list:*),Bash(gh release view:*),Bash(bash .githard/skills/contributors/unanswered.sh:*),Bash(bash .githard/skills/issues-and-roadmap/issue-health.sh:*)"
+
+      - name: Count what the run cost
+        if: always() && steps.plan.outputs.claude == 'true'
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        env:
+          BASH_ENV: ""
+          GH_TOKEN: ${{ secrets.GITHARD_TOKEN }}
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+          OUTCOME: ${{ steps.claude.outcome }}
+          SPEND: ${{ vars.GITHARD_SPEND }}
+          MONTH: ${{ steps.plan.outputs.month }}
+        run: |
+          # this step runs only GitHard's scripts and reads no workspace file, so only .githard must be untouched.
+          # fsmonitor off, so no git config can make the status check run a program beside the write token
+          if [ -n "$(git -c core.fsmonitor=false -C .githard status --porcelain --untracked-files=all)" ]; then
+            echo "::error::GitHard's own files changed while Claude ran, so on-duty won't run its scripts after it."
+            exit 1
+          fi
+          if [ -z "$EXEC" ] && [ "$OUTCOME" != success ]; then
+            echo "::notice::on-duty: the Claude step failed before it reported a cost, so there's nothing to count."
+            exit 0
+          fi
+          cost=$(jq -r '[.[] | select(.type == "result")] | last | .total_cost_usd // empty' "$EXEC" 2>/dev/null) || cost=""
+          if ! new=$(bash .githard/skills/on-duty/spend.sh add "$SPEND" "$cost" "$MONTH"); then
+            echo "::error::on-duty couldn't read this run's cost, so GITHARD_SPEND wasn't updated and the cap can't see it."
+            exit 1
+          fi
+          gh variable set GITHARD_SPEND -R "$REPO" --body "$new"
+          echo "This run cost about \$$cost. Spent this month: ${new#* }."
+
+      - name: Carry out the proposals
+        if: always() && steps.claude.outcome == 'success'
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        env:
+          BASH_ENV: ""
+          GH_TOKEN: ${{ secrets.GITHARD_TOKEN }}
+          SIG: ${{ steps.plan.outputs.sig }}
+        run: |
+          f="$RUNNER_TEMP/githard/actions.json"
+          if [ ! -f "$f" ]; then echo "::warning::on-duty: Claude finished without writing a proposals file"; exit 0; fi
+          # Claude could only write the proposals file; anything else changed means stop
+          if [ -n "$(git -c core.fsmonitor=false status --porcelain --untracked-files=all -- . ':!.githard')" ] ||
+            [ -n "$(git -c core.fsmonitor=false -C .githard status --porcelain --untracked-files=all)" ]; then
+            echo "::error::Files in the checkout changed while Claude ran, so on-duty won't act on this run's proposals."
+            exit 1
+          fi
+          # the config again, from the checked file, not from anything left in RUNNER_TEMP
+          cfg=$(mktemp)
+          bash .githard/skills/on-duty/config.sh .github/githard.yml > "$cfg"
+          rc=0; bash .githard/skills/on-duty/act.sh "$REPO" "$cfg" "$f" || rc=$?
+          # a refusal (1) would be refused again, so it isn't worth paying Claude for the same list.
+          # Only 2, unreadable input or merges left over the per-run limit, means look again next time
+          if [ "$rc" -le 1 ] && [ -n "$SIG" ]; then gh variable set GITHARD_SEEN -R "$REPO" --body "$SIG"; fi
+          exit "$rc"
