@@ -27,10 +27,11 @@ const PY = [
 ];
 const GO = [new RegExp(`\\bos\\.(?:Getenv|LookupEnv)\\(\\s*"${NAME}"`, "g")];
 const RUST = [new RegExp(`\\benv::var(?:_os)?\\(\\s*"${NAME}"`, "g")];
+const RUBY = [new RegExp(`\\bENV${KEY}`, "g"), new RegExp(`\\bENV\\.fetch${ARG}`, "g")];
 
 const PATTERNS: Record<string, RegExp[]> = {
   js: JS, mjs: JS, cjs: JS, jsx: JS, ts: JS, tsx: JS,
-  py: PY, go: GO, rs: RUST,
+  py: PY, go: GO, rs: RUST, rb: RUBY,
 };
 
 const SKIP = ["node_modules", "dist", ".git"];

@@ -71,6 +71,15 @@ test("finds Rust env::var and std::env::var", () => {
   expect(names(src, "main.rs")).toEqual(["DATABASE_URL", "REDIS_URL", "HOME_DIR"]);
 });
 
+test("finds Ruby ENV[] and ENV.fetch, skipping names built at run time", () => {
+  const src = `a = ENV["DATABASE_URL"]\nb = ENV.fetch("SECRET_KEY_BASE")\nc = ENV.fetch('LOG_LEVEL', "info")\nENV[key]\nENV.fetch(key)\nENV["#{prefix}_TOKEN"]`;
+  expect(findRefs(src, "config.rb")).toEqual([
+    { name: "DATABASE_URL", file: "config.rb", line: 1 },
+    { name: "SECRET_KEY_BASE", file: "config.rb", line: 2 },
+    { name: "LOG_LEVEL", file: "config.rb", line: 3 },
+  ]);
+});
+
 test("scanDir skips test files and fixtures by default, and scans them when asked", async () => {
   const root = await mkdtemp(join(tmpdir(), "keyparity-"));
   await mkdir(join(root, "src/__tests__"), { recursive: true });

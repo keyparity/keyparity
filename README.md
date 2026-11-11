@@ -50,7 +50,7 @@ Synced, as far as checked (2)
 GitHub secrets weren't checked.
 ```
 
-It reads env vars from JavaScript and TypeScript (`process.env`, `Bun.env`, `import.meta.env`), Python (`os.environ`, `os.getenv`), Go (`os.Getenv`, `os.LookupEnv`), Rust (`env::var`) and GitHub Actions workflows (`${{ secrets.NAME }}`). Test files and fixtures are skipped unless you pass `--include-tests`. Run `keyparity audit --help` for every flag.
+It reads env vars from JavaScript and TypeScript (`process.env`, `Bun.env`, `import.meta.env`), Python (`os.environ`, `os.getenv`), Go (`os.Getenv`, `os.LookupEnv`), Rust (`env::var`), Ruby (`ENV[]`, `ENV.fetch`) and GitHub Actions workflows (`${{ secrets.NAME }}`). Test files and fixtures are skipped unless you pass `--include-tests`. Run `keyparity audit --help` for every flag.
 
 ## Contributing
 
