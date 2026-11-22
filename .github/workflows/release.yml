@@ -11,6 +11,7 @@ permissions:
   contents: read
 jobs:
   draft:
+    if: github.ref == 'refs/heads/main'   # only release what's on main
     runs-on: ubuntu-latest
     permissions:
       contents: write        # create the draft release
@@ -45,8 +46,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-        # Keeps the running draft's notes if there is one.
+        # Keeps the running draft's notes if there is one. Only a draft is ever replaced.
         run: |
+          if [ "$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null)" = false ]; then
+            echo "v$VERSION is already published, so it's left alone"; exit 1
+          fi
           notes=$(gh release view "v$VERSION" --json body --jq .body 2>/dev/null || true)
           gh release delete "v$VERSION" --yes 2>/dev/null || true
           gh release create "v$VERSION" dist/* --draft --target "$GITHUB_SHA" --title "v$VERSION" --notes "${notes:-Release notes go here.}"
